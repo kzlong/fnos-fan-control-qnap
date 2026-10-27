@@ -617,8 +617,21 @@ document.getElementById('manualSlider').addEventListener('input',function(){docu
 
 async function applyManual(){
   const val=parseInt(document.getElementById('manualSlider').value);
-  const r=await api('config','POST',{manual_pwm_percent:val});
-  if(r&&r.ok)showToast('转速已设置为 '+val+'%');else showToast('设置失败','fail');
+  let r;
+  if(config.zones&&config.zones.length>0){
+    const zoneId=config.zones[0].id;
+    r=await api('zones/'+encodeURIComponent(zoneId)+'/config','POST',{manual_pwm_percent:val});
+  }else{
+    r=await api('config','POST',{manual_pwm_percent:val});
+  }
+  if(r&&r.ok){
+    const cfg=await api('config');
+    if(cfg)loadConfig(cfg);
+    await fetchStatus();
+    showToast('转速已设置为 '+val+'%');
+  }else{
+    showToast('设置失败','fail');
+  }
 }
 
 let curveData=JSON.parse(JSON.stringify(DEFAULT_CURVE));

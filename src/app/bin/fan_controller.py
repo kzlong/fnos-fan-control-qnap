@@ -294,25 +294,34 @@ class FanController(threading.Thread):
                     logger.error("set_pwm_mode 失败，模式切换中止")
                     return False
 
-            # 立即写入对应 PWM
+            # 计算并立即写入对应 PWM。缺少 pwm_enable 时由 Hardware
+            # 兼容处理；实际 PWM 写入失败仍必须让模式切换失败。
             effective_temp = self._get_effective_temp(
                 cpu_temp, disk_temps, zone["temp_source"])
+            pwm_val = None
 
             if mode == self.MODE_DEFAULT and effective_temp is not None:
                 pwm_val = self._interpolate_curve(effective_temp, DEFAULT_SAFE_CURVE)
-                for ch in zone["channels"]:
-                    self._hw.write_pwm(pwm_val, ch, zone["min_pwm_percent"])
             elif mode == self.MODE_FULL:
-                for ch in zone["channels"]:
-                    self._hw.write_pwm(255, ch, min_percent=0)
+                pwm_val = 255
             elif mode == self.MODE_MANUAL:
                 pwm_val = int(255 * zone["manual_pwm_percent"] / 100)
-                for ch in zone["channels"]:
-                    self._hw.write_pwm(pwm_val, ch, zone["min_pwm_percent"])
             elif mode == self.MODE_AUTO and effective_temp is not None:
                 pwm_val = self._interpolate_curve(effective_temp, zone["curve"])
+
+            if pwm_val is not None:
                 for ch in zone["channels"]:
-                    self._hw.write_pwm(pwm_val, ch, zone["min_pwm_percent"])
+                    if mode == self.MODE_FULL:
+                        write_ok = self._hw.write_pwm(pwm_val, ch, min_percent=0)
+                    else:
+                        write_ok = self._hw.write_pwm(
+                            pwm_val, ch, zone["min_pwm_percent"])
+                    if not write_ok:
+                        logger.error(
+                            "模式切换到 %s 时写入通道 %s 失败，保留原配置",
+                            mode, ch,
+                        )
+                        return False
 
             # 更新配置
             self._cfg.update_zone(zone["id"], {"mode": mode})

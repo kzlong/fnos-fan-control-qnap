@@ -447,6 +447,15 @@ class Hardware:
             return False
 
         enable_file = os.path.join(chip["hwmon_path"], f"{local_ch}_enable")
+        # Some hwmon drivers (including qnap8528) expose writable pwmX
+        # but do not provide pwmX_enable. In that case direct PWM control
+        # is supported; do not block a mode switch on a missing attribute.
+        if not os.path.exists(enable_file):
+            logger.info(
+                "通道 %s 不提供 pwm_enable，跳过模式设置，使用直接 PWM 控制",
+                channel,
+            )
+            return True
         return self._write_file(enable_file, str(mode))
 
     def restore_safe_state(self):

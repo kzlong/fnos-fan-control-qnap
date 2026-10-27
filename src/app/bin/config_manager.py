@@ -30,7 +30,7 @@ DEFAULT_CONFIG = {
         {"temp": 70, "pwm_percent": 85},
         {"temp": 80, "pwm_percent": 100},
     ],
-    "fan_channel": "pwm2",
+    "fan_channel": "pwm1",
     "web_port": 9511,
 }
 
@@ -123,6 +123,12 @@ def _validate_fan_channel(value, available_pwm: list[str] | None = None) -> str:
     if isinstance(value, str) and value.startswith("pwm"):
         if available_pwm is None or value in available_pwm:
             return value
+    if available_pwm:
+        logger.warning(
+            "fan_channel 校验失败: %r，回退到检测到的通道 %s",
+            value, available_pwm[0],
+        )
+        return available_pwm[0]
     logger.warning("fan_channel 校验失败: %r，回退默认值", value)
     return DEFAULT_CONFIG["fan_channel"]
 
@@ -148,8 +154,15 @@ def _validate_zone(zone: dict, available_pwm: list[str] | None = None) -> dict |
     if available_pwm is not None:
         valid_channels = [ch for ch in channels if ch in available_pwm]
         if not valid_channels:
-            logger.warning("zone '%s' 所有 channels 无效，跳过", zone_id)
-            return None
+            if available_pwm:
+                logger.warning(
+                    "zone '%s' 的 channels 无效，回退到检测到的通道 %s",
+                    zone_id, available_pwm[0],
+                )
+                valid_channels = [available_pwm[0]]
+            else:
+                logger.warning("zone '%s' 所有 channels 无效，跳过", zone_id)
+                return None
         channels = valid_channels
 
     name = zone.get("name")
@@ -300,10 +313,10 @@ class ConfigManager:
                 self._config = validate_config(raw, self._available_pwm)
                 logger.info("配置已加载: %s", self._config_path)
             except FileNotFoundError:
-                self._config = copy.deepcopy(DEFAULT_CONFIG)
+                self._config = validate_config(copy.deepcopy(DEFAULT_CONFIG), self._available_pwm)
                 logger.info("配置文件不存在，使用默认配置")
             except (json.JSONDecodeError, ValueError) as e:
-                self._config = copy.deepcopy(DEFAULT_CONFIG)
+                self._config = validate_config(copy.deepcopy(DEFAULT_CONFIG), self._available_pwm)
                 logger.warning("配置文件解析失败 (%s)，使用默认配置", e)
 
             return copy.deepcopy(self._config)
